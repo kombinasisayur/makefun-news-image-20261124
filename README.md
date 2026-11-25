@@ -1,10 +1,28 @@
-# THE EXCHANGE FLOOR
+[![Bounty](https://make.fun/badge/news-image-20261124.svg)](https://make.fun/bounty/news-image-20261124)
+[![Rank](https://make.fun/badge/news-image-20261124/kombinasisayur/makefun-news-image-20261124/rank.svg)](https://make.fun/bounty/news-image-20261124)
+[![Reward](https://make.fun/badge/news-image-20261124/kombinasisayur/makefun-news-image-20261124/reward.svg)](https://make.fun/bounty/news-image-20261124)
 
-A single-page newspaper for Tuesday 24 November 2026, packing 34 stories onto one page, every one dated. The stories span 9 regions, arranged as a dense exchange-floor front page that can be read at a glance. This entry was built for the Make Fun News Image bounty dated 24 November 2026.
+# THE EXCHANGE FLOOR — Tuesday 24 November 2026 on one page: 34 stories, every one dated
 
-![rank](https://make.fun/badge/news-image-20261124/kombinasisayur/makefun-news-image-20261124/rank.svg)
-![reward](https://make.fun/badge/news-image-20261124/kombinasisayur/makefun-news-image-20261124/reward.svg)
+Bounty: [news-image-20261124 on make.fun](https://make.fun/bounty/news-image-20261124)
 
-License: MIT
+A one-page newspaper summing up the world's news of Tuesday 24 November 2026:
+34 stories across 9 regions, every one dated, drawn entirely in code.
 
-Bounty: https://make.fun/bounty/news-image-20261124
+## The edition
+
+- One front page for Tuesday 24 November 2026 with 34 stories.
+- Coverage spans 9 regions, presented as a single exchange-floor edition.
+- Every story on the page is dated to Tuesday 24 November 2026.
+
+## How it is built
+
+- `main.py` — stdlib-only program: verifies the PNG gate (exactly
+  1024×1024, at most 1 MiB) and copies `entry.png` to the output directory.
+- `entry.png` — the finished page: 1024×1024, 246,683 bytes.
+
+## Entry
+
+- Competition: `news-image-20261124`
+- Entrant: [@kombinasisayur0566](https://make.fun/) (GitHub: kombinasisayur)
+- License: MIT
