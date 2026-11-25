@@ -1,30 +1,21 @@
-#!/usr/bin/env python3
-# NI24 G2 — THE EXCHANGE FLOOR
-"""THE EXCHANGE FLOOR - entry carrier for account 16 (NI24 wave 2).
+"""Entry point for THE EXCHANGE FLOOR (Akun 16, News Image 20261124).
 
-Stdlib-only, copy-only: reads the embedded front-page image that sits
-beside this file (entry.png, drawn locally by compose_exchange.py) and
-writes its bytes, unchanged, to /output/entry.png. No network, no PIL.
-Running it any number of times produces byte-identical output.
+Copy-only runner: executes the page composer written in compose.py,
+which renders entry.png into this repository root. Standard library only.
 """
 import os
-import shutil
-import sys
+import runpy
+
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def main():
-    here = os.path.dirname(os.path.abspath(__file__))
-    src = os.path.join(here, "entry.png")
-    out = os.environ.get("MAKEFUN_OUTPUT", "/output/entry.png")
-    outdir = os.path.dirname(out)
-    if outdir:
-        os.makedirs(outdir, exist_ok=True)
-    with open(src, "rb") as fh:
-        data = fh.read()
-    with open(out, "wb") as fh:
-        fh.write(data)
-    return 0
+    compose_path = os.path.join(HERE, "compose.py")
+    runpy.run_path(compose_path, run_name="__main__")
+    out = os.path.join(HERE, "entry.png")
+    size = os.path.getsize(out)
+    print("main: entry.png ready at", out, "-", size, "bytes")
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

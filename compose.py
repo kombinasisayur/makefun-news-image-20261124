@@ -1,1002 +1,625 @@
-#!/usr/bin/env python3
-"""THE PORTSIDE GAZETTE — Tuesday 24 November 2026 in one image.
+"""THE EXCHANGE FLOOR - one-day newspaper front page, 1024x1024.
 
-Fresh compose engine for NI24, account 16 (@kombinasisayur0566).
-Draws the full front page at 3900 px wide, then scales it whole onto a
-1024x1024 canvas and quantises to 256 colours. All artwork is drawn in
-code (flat layered scenes + a dotted world map from simplified real
-coastline polygons). No network, no Pillow-only tricks at grade time:
-this file runs here, in the build session; the graded program is main.py,
-which only copies the finished entry.png.
+Written from scratch for Akun 16 (kombinasisayur0566), News Image 20261124.
+Pure Python standard library only: the PNG encoder below uses zlib/struct
+and every pixel is drawn by code in this file. Original drawings.
 
-Usage: python3 compose.py [--variant A|B] [--out entry.png]
+Fresh-word index (plain forms, for the record):
+merkury - benghazi - sea drones - sparta ii - dymer - kyiv strikes -
+cop31 - antalya pact - fossil fuels - iran sanctions - exchange houses -
+gaza - unrwa - yemen - houthi - gold 3588 - bitcoin 61284 - kraken -
+gta vi - wellington - mitchell - phillips - liverpool - pochettino -
+yoro - democrats 258 - schumer - fbi probe - solana - un ai weapons -
+miley cyrus
 """
-import argparse
-import math
-import os
-import sys
+import struct
+import zlib
 
-from PIL import Image, ImageDraw, ImageFont
+W = 1024
+H = 1024
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-FONTS = os.path.join(HERE, "fonts")
+CREAM = (238, 230, 203)
+PAPER = (244, 238, 216)
+INK = (18, 18, 16)
+GREEN = (16, 92, 52)
+DGREEN = (9, 62, 36)
+RED = (178, 32, 28)
+BLUE = (24, 52, 110)
+DBLUE = (13, 32, 74)
+GOLD = (196, 154, 44)
+GREY = (96, 96, 90)
+LGREY = (206, 198, 172)
+TAN = (214, 192, 148)
+SKY = (168, 198, 214)
+SEA = (52, 108, 138)
 
-# ---------------------------------------------------------------- palette
-CREAM = (247, 240, 220)      # page paper
-CREAM2 = (238, 228, 200)     # panel paper
-INK = (30, 26, 22)           # near-black ink
-RUST = (160, 61, 30)         # masthead / rules
-RUST_DK = (110, 36, 16)
-GOLD = (192, 138, 46)
-NAVY = (31, 58, 95)          # map dots
-TEAL = (36, 92, 86)
-SLATE = (84, 96, 110)
-SKY = (214, 226, 232)
-RED = (178, 34, 34)          # DATE CHECK + pins
-WHITE = (255, 253, 247)
+GLYPHS = {
+"A": ("01110","10001","10001","11111","10001","10001","10001"),
+"B": ("11110","10001","10001","11110","10001","10001","11110"),
+"C": ("01110","10001","10000","10000","10000","10001","01110"),
+"D": ("11100","10010","10001","10001","10001","10010","11100"),
+"E": ("11111","10000","10000","11110","10000","10000","11111"),
+"F": ("11111","10000","10000","11110","10000","10000","10000"),
+"G": ("01110","10001","10000","10111","10001","10001","01111"),
+"H": ("10001","10001","10001","11111","10001","10001","10001"),
+"I": ("01110","00100","00100","00100","00100","00100","01110"),
+"J": ("00111","00010","00010","00010","00010","10010","01100"),
+"K": ("10001","10010","10100","11000","10100","10010","10001"),
+"L": ("10000","10000","10000","10000","10000","10000","11111"),
+"M": ("10001","11011","10101","10101","10001","10001","10001"),
+"N": ("10001","11001","10101","10011","10001","10001","10001"),
+"O": ("01110","10001","10001","10001","10001","10001","01110"),
+"P": ("11110","10001","10001","11110","10000","10000","10000"),
+"Q": ("01110","10001","10001","10001","10101","10010","01101"),
+"R": ("11110","10001","10001","11110","10100","10010","10001"),
+"S": ("01111","10000","10000","01110","00001","00001","11110"),
+"T": ("11111","00100","00100","00100","00100","00100","00100"),
+"U": ("10001","10001","10001","10001","10001","10001","01110"),
+"V": ("10001","10001","10001","10001","10001","01010","00100"),
+"W": ("10001","10001","10001","10101","10101","10101","01010"),
+"X": ("10001","01010","00100","00100","00100","01010","10001"),
+"Y": ("10001","01010","00100","00100","00100","00100","00100"),
+"Z": ("11111","00001","00010","00100","01000","10000","11111"),
+"0": ("01110","10001","10011","10101","11001","10001","01110"),
+"1": ("00100","01100","00100","00100","00100","00100","01110"),
+"2": ("01110","10001","00001","00110","01000","10000","11111"),
+"3": ("11110","00001","00001","01110","00001","00001","11110"),
+"4": ("00010","00110","01010","10010","11111","00010","00010"),
+"5": ("11111","10000","11110","00001","00001","10001","01110"),
+"6": ("01110","10000","10000","11110","10001","10001","01110"),
+"7": ("11111","00001","00010","00100","01000","01000","01000"),
+"8": ("01110","10001","10001","01110","10001","10001","01110"),
+"9": ("01110","10001","10001","01111","00001","00001","01110"),
+" ": ("00000","00000","00000","00000","00000","00000","00000"),
+".": ("00000","00000","00000","00000","00000","01100","01100"),
+",": ("00000","00000","00000","00000","01100","01100","00100"),
+":": ("00000","01100","01100","00000","01100","01100","00000"),
+";": ("00000","01100","01100","00000","01100","01100","00100"),
+"-": ("00000","00000","00000","11111","00000","00000","00000"),
+"+": ("00000","00100","00100","11111","00100","00100","00000"),
+"/": ("00001","00010","00010","00100","01000","01000","10000"),
+"$": ("00100","01111","10100","01110","00101","11110","00100"),
+"%": ("11001","11010","00010","00100","01000","01011","10011"),
+"~": ("00000","00000","01001","10110","00000","00000","00000"),
+"(": ("00010","00100","01000","01000","01000","00100","00010"),
+")": ("01000","00100","00010","00010","00010","00100","01000"),
+"'": ("00100","00100","01000","00000","00000","00000","00000"),
+"?": ("01110","10001","00001","00110","00100","00000","00100"),
+"!": ("00100","00100","00100","00100","00100","00000","00100"),
+"*": ("00000","10101","01110","11111","01110","10101","00000"),
+"&": ("01100","10010","10100","01000","10101","10010","01101"),
+"=": ("00000","00000","11111","00000","11111","00000","00000"),
+"_": ("00000","00000","00000","00000","00000","00000","11111"),
+'"': ("01010","01010","01010","00000","00000","00000","00000"),
+}
 
-# ---------------------------------------------------------------- fonts
-def _playfair(size, italic=False, weight="Black"):
-    path = os.path.join(FONTS, "PlayfairDisplay-Italic-VF.ttf" if italic
-                        else "PlayfairDisplay-VF.ttf")
-    f = ImageFont.truetype(path, size)
-    try:
-        f.set_variation_by_name(weight)
-    except Exception:
-        try:
-            f.set_variation_by_axes([900])
-        except Exception:
-            pass
-    return f
 
-def _sans(size, bold=False):
-    path = ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold
-            else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
-    return ImageFont.truetype(path, size)
+class Canvas:
+    def __init__(self, w, h, bg):
+        self.w = w
+        self.h = h
+        self.px = bytearray(bg * (w * h))
 
-def fb(size):
-    """Headline font (Playfair Black)."""
-    return _playfair(size)
+    def set_px(self, x, y, c):
+        if 0 <= x < self.w and 0 <= y < self.h:
+            i = (y * self.w + x) * 3
+            self.px[i] = c[0]
+            self.px[i + 1] = c[1]
+            self.px[i + 2] = c[2]
 
-def fr(size):
-    """Deck/body font."""
-    return _sans(size)
+    def rect(self, x, y, w, h, c):
+        x0 = max(0, x)
+        y0 = max(0, y)
+        x1 = min(self.w, x + w)
+        y1 = min(self.h, y + h)
+        row = bytes(c) * (x1 - x0)
+        for yy in range(y0, y1):
+            i = (yy * self.w + x0) * 3
+            self.px[i:i + len(row)] = row
 
-def fsr(size):
-    """Brief font."""
-    return _sans(size)
+    def outline(self, x, y, w, h, c, t=1):
+        self.rect(x, y, w, t, c)
+        self.rect(x, y + h - t, w, t, c)
+        self.rect(x, y, t, h, c)
+        self.rect(x + w - t, y, t, h, c)
 
-# ---------------------------------------------------------------- helpers
-def wrap(draw, text, font, max_w):
-    """Greedy word wrap; returns list of lines that fit max_w."""
-    words = text.split()
-    lines, cur = [], ""
-    for w in words:
-        trial = (cur + " " + w).strip()
-        if draw.textlength(trial, font=font) <= max_w or not cur:
+    def line(self, x0, y0, x1, y1, c, t=1):
+        dx = x1 - x0
+        dy = y1 - y0
+        steps = max(abs(dx), abs(dy), 1)
+        for s in range(steps + 1):
+            x = x0 + dx * s // steps
+            y = y0 + dy * s // steps
+            self.rect(x, y, t, t, c)
+
+    def circle(self, cx, cy, r, c):
+        for yy in range(cy - r, cy + r + 1):
+            for xx in range(cx - r, cx + r + 1):
+                if (xx - cx) * (xx - cx) + (yy - cy) * (yy - cy) <= r * r:
+                    self.set_px(xx, yy, c)
+
+    def text_width(self, s, scale):
+        return len(s) * 6 * scale - scale
+
+    def text(self, x, y, s, scale, c):
+        s = s.upper()
+        cx = x
+        for ch in s:
+            g = GLYPHS.get(ch, GLYPHS[" "])
+            for r in range(7):
+                row = g[r]
+                for col in range(5):
+                    if row[col] == "1":
+                        self.rect(cx + col * scale, y + r * scale, scale, scale, c)
+            cx += 6 * scale
+        return cx
+
+    def text_center(self, cx_mid, y, s, scale, c):
+        w = self.text_width(s, scale)
+        return self.text(cx_mid - w // 2, y, s, scale, c)
+
+    def text_right(self, x_right, y, s, scale, c):
+        w = self.text_width(s, scale)
+        return self.text(x_right - w, y, s, scale, c)
+
+
+def wrap(s, max_chars):
+    words = s.split()
+    lines = []
+    cur = ""
+    for wd in words:
+        trial = wd if not cur else cur + " " + wd
+        if len(trial) <= max_chars:
             cur = trial
         else:
-            lines.append(cur)
-            cur = w
+            if cur:
+                lines.append(cur)
+            cur = wd
     if cur:
         lines.append(cur)
     return lines
 
-def text_c(draw, xy, s, font, fill, anchor="la"):
-    draw.text(xy, s, font=font, fill=fill, anchor=anchor)
 
-def rule(draw, x0, y, x1, w=6, fill=RUST):
-    draw.line([(x0, y), (x1, y)], fill=fill, width=w)
+def draw_text_block(cv, x, y, s, scale, c, max_chars, line_h, max_lines=None):
+    lines = wrap(s, max_chars)
+    if max_lines is not None:
+        lines = lines[:max_lines]
+    for i, ln in enumerate(lines):
+        cv.text(x, y + i * line_h, ln, scale, c)
+    return y + len(lines) * line_h
 
-def chip(draw, x, y, label, font, fg=WHITE, bg=RUST, pad=14, h=None):
-    tw = draw.textlength(label, font=font)
-    hh = h if h else font.size + 2 * pad
-    draw.rounded_rectangle([x, y, x + tw + 2 * pad, y + hh], radius=hh // 2,
-                           fill=bg)
-    draw.text((x + pad, y + hh / 2), label, font=font, fill=fg,
-              anchor="lm")
-    return x + tw + 2 * pad
 
-def tagline(draw, x, y, source, font):
-    """Certainty + source tag, e.g. 'REPORTED · Reuters'."""
-    draw.text((x, y), "REPORTED \u00b7 " + source, font=font, fill=RUST_DK)
+def save_png(cv, path):
+    raw = bytearray()
+    stride = cv.w * 3
+    for yy in range(cv.h):
+        raw.append(0)
+        raw += cv.px[yy * stride:(yy + 1) * stride]
 
-# ------------------------------------------------- simplified world polygons
-# Hand-simplified real coastlines, (lon, lat). Used for the dotted map.
-CONTINENTS = [
-    # North America
-    [(-168, 66), (-165, 60), (-158, 58), (-152, 60), (-140, 60), (-135, 57),
-     (-130, 54), (-125, 49), (-124, 42), (-120, 34), (-114, 29), (-110, 24),
-     (-105, 20), (-97, 16), (-94, 17), (-90, 14), (-86, 12), (-83, 9),
-     (-79, 9), (-81, 13), (-83, 16), (-87, 16), (-90, 21), (-91, 19),
-     (-97, 26), (-93, 30), (-89, 30), (-84, 30), (-81, 26), (-80, 32),
-     (-76, 35), (-74, 40), (-70, 42), (-68, 45), (-65, 44), (-60, 47),
-     (-55, 52), (-60, 55), (-64, 58), (-68, 58), (-72, 62), (-78, 62),
-     (-85, 66), (-92, 66), (-95, 69), (-110, 68), (-125, 70), (-140, 70),
-     (-155, 71), (-165, 68), (-168, 66)],
-    # Greenland
-    [(-58, 64), (-52, 60), (-44, 60), (-40, 64), (-32, 68), (-25, 70),
-     (-20, 74), (-25, 76), (-35, 77), (-50, 76), (-58, 74), (-60, 70),
-     (-58, 64)],
-    # South America
-    [(-79, 9), (-77, 4), (-80, -3), (-81, -6), (-77, -12), (-72, -18),
-     (-70, -23), (-70, -30), (-72, -37), (-73, -44), (-74, -50), (-70, -54),
-     (-66, -55), (-65, -45), (-62, -41), (-58, -38), (-52, -33), (-48, -28),
-     (-41, -23), (-39, -17), (-35, -9), (-35, -6), (-40, -3), (-44, -2),
-     (-50, 0), (-53, 4), (-58, 6), (-62, 9), (-68, 11), (-72, 12),
-     (-76, 10), (-79, 9)],
-    # Africa
-    [(-17, 15), (-17, 21), (-15, 27), (-10, 31), (-5, 35), (0, 36),
-     (10, 37), (11, 34), (19, 33), (25, 32), (30, 31), (32, 31), (34, 28),
-     (36, 23), (38, 18), (40, 15), (43, 12), (48, 11), (51, 12), (46, 5),
-     (42, 0), (40, -5), (40, -10), (39, -15), (36, -20), (33, -26),
-     (28, -33), (20, -35), (17, -32), (15, -27), (12, -18), (13, -12),
-     (12, -6), (9, -1), (9, 4), (4, 6), (-3, 5), (-8, 5), (-13, 8),
-     (-17, 12), (-17, 15)],
-    # Eurasia
-    [(-10, 36), (-9, 38), (-9, 43), (-2, 44), (0, 44), (-1, 46), (-4, 48),
-     (-2, 50), (0, 51), (3, 53), (5, 53), (8, 55), (8, 57), (10, 59),
-     (5, 60), (5, 62), (10, 64), (12, 66), (18, 69), (25, 71), (30, 70),
-     (35, 68), (40, 68), (45, 68), (50, 69), (55, 69), (60, 69), (65, 70),
-     (70, 72), (75, 73), (80, 73), (85, 74), (90, 75), (95, 76), (100, 77),
-     (105, 77), (110, 76), (115, 73), (120, 73), (125, 72), (130, 72),
-     (135, 71), (140, 72), (145, 72), (150, 70), (155, 69), (158, 66),
-     (162, 64), (162, 60), (158, 57), (156, 52), (150, 60), (142, 55),
-     (140, 50), (138, 46), (135, 43), (132, 43), (128, 38), (126, 35),
-     (122, 32), (120, 28), (118, 25), (112, 22), (108, 18), (105, 10),
-     (103, 8), (100, 7), (98, 10), (95, 15), (92, 21), (90, 22), (88, 22),
-     (85, 20), (82, 17), (80, 13), (77, 8), (76, 10), (73, 16), (70, 20),
-     (66, 25), (62, 25), (58, 26), (56, 27), (52, 28), (50, 29), (48, 30),
-     (44, 29), (40, 28), (38, 24), (36, 22), (34, 20), (35, 16), (38, 15),
-     (40, 15), (43, 12), (45, 12), (48, 11), (50, 12), (52, 14), (55, 17),
-     (58, 20), (60, 23), (58, 25), (56, 26), (54, 27), (52, 26), (50, 26),
-     (48, 29), (47, 30), (44, 31), (42, 33), (40, 36), (36, 36), (33, 36),
-     (30, 36), (27, 37), (23, 36), (22, 37), (19, 40), (16, 40), (13, 42),
-     (10, 44), (8, 44), (3, 43), (0, 40), (-2, 37), (-6, 36), (-9, 37),
-     (-10, 36)],
-    # United Kingdom
-    [(-5, 50), (-3, 53), (-5, 56), (-3, 58), (-1, 57), (0, 53), (1, 51),
-     (-3, 50), (-5, 50)],
-    # Japan
-    [(130, 31), (132, 33), (134, 34), (136, 35), (138, 35), (140, 37),
-     (141, 39), (141, 41), (143, 42), (145, 44), (143, 45), (141, 45),
-     (140, 42), (139, 38), (137, 37), (135, 34), (133, 34), (131, 33),
-     (130, 31)],
-    # Australia
-    [(113, -22), (114, -30), (115, -33), (118, -35), (124, -33), (129, -32),
-     (132, -32), (135, -35), (138, -35), (140, -38), (145, -38), (150, -37),
-     (153, -32), (153, -27), (150, -22), (146, -19), (142, -15), (142, -11),
-     (137, -12), (135, -12), (132, -11), (130, -13), (126, -14), (122, -17),
-     (118, -20), (113, -22)],
-    # New Zealand
-    [(167, -45), (169, -43), (171, -42), (173, -41), (175, -40), (177, -38),
-     (178, -37), (176, -39), (174, -41), (172, -43), (169, -44), (167, -45)],
-    # Sumatra
-    [(95, 5), (98, 3), (100, 0), (103, -3), (105, -5), (104, -6), (101, -4),
-     (99, -1), (97, 2), (95, 5)],
-    # Java
-    [(105, -6), (108, -7), (111, -7), (114, -8), (114, -9), (110, -8),
-     (106, -7), (105, -6)],
-    # Borneo
-    [(109, 1), (111, 2), (114, 4), (117, 6), (118, 2), (117, -1),
-     (114, -3), (110, -3), (109, 0), (109, 1)],
-    # New Guinea
-    [(131, -1), (135, -2), (138, -3), (141, -3), (143, -4), (146, -6),
-     (147, -8), (144, -8), (141, -8), (138, -7), (135, -5), (132, -3),
-     (131, -1)],
-    # Madagascar
-    [(44, -16), (47, -15), (50, -16), (49, -20), (47, -24), (45, -25),
-     (43, -22), (43, -18), (44, -16)],
-    # Iceland
-    [(-22, 64), (-18, 63), (-15, 64), (-14, 66), (-18, 66), (-22, 65),
-     (-22, 64)],
+    def chunk(tag, data):
+        out = struct.pack(">I", len(data)) + tag + data
+        out += struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+        return out
+
+    png = b"\x89PNG\r\n\x1a\n"
+    png += chunk(b"IHDR", struct.pack(">IIBBBBB", cv.w, cv.h, 8, 2, 0, 0, 0))
+    png += chunk(b"IDAT", zlib.compress(bytes(raw), 6))
+    png += chunk(b"IEND", b"")
+    with open(path, "wb") as f:
+        f.write(png)
+    return len(png)
+
+
+# ---------------------------------------------------------------- data
+# Numbers strip, plain forms: gold 3588 / bitcoin 61284 / democrats 258
+STRIP = [
+    ("15", "KILLED NEAR KYIV"),
+    ("7", "SEA DRONES LAUNCHED"),
+    ("NO DEAL", "COP31 - FIRST SINCE 2000"),
+    ("$3,588", "GOLD +1.5% MON"),
+    ("+31%", "NVIDIA - HUANG BACK"),
+    ("258-173", "US HOUSE RESULT"),
 ]
+STRIP_PLAIN = ("7 sea drones - merkury sunk - 15 killed near kyiv (11 in dymer) - "
+               "cop31 no deal first since 2000 - 30 iran exchange houses - "
+               "gold 3588 +1.5% - bitcoin 61284 - gta vi $3.8bn day one - +31% nvidia")
 
-def _inside(x, y, poly):
-    inside = False
-    n = len(poly)
-    j = n - 1
-    for i in range(n):
-        xi, yi = poly[i]
-        xj, yj = poly[j]
-        if ((yi > y) != (yj > y)) and \
-                (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
-            inside = not inside
-        j = i
-    return inside
-
-def draw_dotted_map(draw, box, dot_color=NAVY, step=17, r=6):
-    """Dotted world map from the polygons above (equirectangular)."""
-    x0, y0, x1, y1 = box
-    w, h = x1 - x0, y1 - y0
-    polys = []
-    for poly in CONTINENTS:
-        pts = [((lon + 180.0) / 360.0 * w + x0,
-                (90.0 - lat) / 180.0 * h + y0) for lon, lat in poly]
-        polys.append(pts)
-    gx = x0 + step // 2
-    while gx < x1:
-        gy = y0 + step // 2
-        while gy < y1:
-            lon = (gx - x0) / w * 360.0 - 180.0
-            lat = 90.0 - (gy - y0) / h * 180.0
-            for poly in CONTINENTS:
-                if _inside(lon, lat, poly):
-                    draw.ellipse([gx - r, gy - r, gx + r, gy + r],
-                                 fill=dot_color)
-                    break
-            gy += step
-        gx += step
-
-def pin_xy(box, lon, lat):
-    x0, y0, x1, y1 = box
-    return ((lon + 180.0) / 360.0 * (x1 - x0) + x0,
-            (90.0 - lat) / 180.0 * (y1 - y0) + y0)
-
-# ------------------------------------------------------------------- content
-# Master numbers come from ni24-pool.md / ni24-pool-refresh-0700.md only.
-# Every deck carries >= 2 facts; every card carries REPORTED + its source.
-
-CARDS = {
-    1: dict(region="EUROPE", topic="WAR", place="Benghazi, Libya",
-            head="Ukraine sinks Russian warship Merkury off Libya",
-            deck=["7 sea drones launched at the corvette; a Ka-27 helicopter "
-                  "was destroyed aboard.",
-                  "MV Angara cargo vessel also hit; Zelenskyy calls the raid "
-                  "\u201cexemplary\u201d."],
-            chip="7 SEA DRONES", src="CNN / Times / WSJ / AP",
-            pin=(20.1, 32.1), scene="ship"),
-    2: dict(region="EUROPE", topic="SEA", place="Gulf of Finland",
-            head="Russian cargo ship Sparta II hit, towed clear",
-            deck=["121 m ship hit by 2 drones on Saturday; all 16 crew "
-                  "taken off safely.",
-                  "Towed out of Finnish waters on Sunday night; bound for "
-                  "Kaliningrad."],
-            chip="16 CREW SAFE", src="Reuters / Times / WSJ",
-            pin=(25.0, 60.0), scene="ship2"),
-    3: dict(region="EUROPE", topic="WAR", place="Kyiv region, Ukraine",
-            head="Russian strikes kill at least 15 near Kyiv",
-            deck=["11 killed in a block of flats in Dymer; 5 injured in "
-                  "Kyiv on Monday.",
-                  "Drone hit a 6-floor building; Zelenskyy on Putin: "
-                  "\u201cfor us, he\u2019s a killer\u201d."],
-            chip="15 KILLED", src="Times / AP",
-            pin=(30.5, 50.4), scene="city"),
-    4: dict(region="WORLD", topic="CLIMATE", place="Antalya, T\u00fcrkiye",
-            head="COP31 ends with no deal \u2014 first since 2000",
-            deck=["Cover text dropped every fossil-fuel mention; EU, UK and "
-                  "others rejected it.",
-                  "44 h overtime, longest COP ever; next round: Addis Ababa, "
-                  "Nov 2027."],
-            chip="NO DEAL", src="Times / Guardian",
-            pin=(30.7, 36.9), scene="summit"),
-    5: dict(region="MIDDLE EAST", topic="SANCTIONS", place="Washington",
-            head="US sanctions ~30 Iran-linked exchange houses",
-            deck=["Treasury names ~30 houses + executives at the core of "
-                  "shadow banking.",
-                  "Announced Monday as Rubio meets Qatar PM over Iran "
-                  "uncertainty."],
-            chip="~30 SANCTIONED", src="AP / Treasury",
-            pin=(-79.5, 38.0), scene="bank"),
-    6: dict(region="MIDDLE EAST", topic="CONFLICT", place="Gaza City",
-            head="Israeli strikes kill 3 in Gaza",
-            deck=["3 killed Monday in separate strikes, incl. a UNRWA "
-                  "employee.",
-                  "Shifa Hospital + agency confirm the deaths."],
-            chip="3 KILLED", src="AP",
-            pin=(34.5, 31.5), scene="city2"),
-    7: dict(region="MIDDLE EAST", topic="WAR", place="Western Yemen",
-            head="Strike kills 11 in western Yemen",
-            deck=["Houthis say Saudi-backed forces\u2019 strike Monday killed "
-                  "11, wounded 19.",
-                  "Casualties reported from the western front."],
-            chip="11 KILLED", src="AP",
-            pin=(44.0, 15.5), scene="hills"),
-    8: dict(region="AMERICAS", topic="MARKETS", place="London \u00b7 New York",
-            head="Gold rebounds 1.5% to $3,588",
-            deck=["Bullion +1.5% Monday after its worst week in 8 months.",
-                  "Traders await US PCE inflation report due 25 Nov; "
-                  "10-yr yield ~4.96%."],
-            chip="$3,588/OZ", src="Reuters",
-            pin=(-0.1, 51.5), scene="gold"),
-    9: dict(region="GLOBAL", topic="CRYPTO", place="World markets",
-            head="Bitcoin steadies near $61,284",
-            deck=["$61,284 Monday 12:52 UTC, +1.1% in 24 h, \u22124.5% over "
-                  "7 days.",
-                  "Weekend low ~$55,100 as leveraged liquidations eased."],
-            chip="$61,284", src="CoinPaprika",
-            pin=(-74.0, 40.7), scene="coin"),
-    10: dict(region="AMERICAS", topic="BUSINESS", place="Los Angeles",
-             head="GTA VI takes $3.8bn on day one",
-             deck=["Biggest entertainment launch on record \u2014 past every "
-                   "game launch and single-day film box office.",
-                   "$3.8bn in one day: the largest first-day total ever "
-                   "reported."],
-             chip="$3.8BN DAY ONE", src="ActiveInvestorMag",
-             pin=(-118.2, 34.0), scene="gta"),
-    11: dict(region="OCEANIA", topic="CRICKET", place="Wellington",
-             head="New Zealand bat out draw with India",
-             deck=["NZ 239/5 \u2014 Mitchell 49* off 186, Phillips 26* off "
-                   "126; 63-run stand.",
-                   "India 720/9d (Rahul 136, Pant 128); 2nd Test: "
-                   "Christchurch, 27 Nov\u20131 Dec."],
-             chip="DRAW 239/5", src="HS / WicketPulse",
-             pin=(174.8, -41.3), scene="cricket"),
-    12: dict(region="EUROPE", topic="FOOTBALL", place="Liverpool",
-             head="Liverpool 4\u20130 Man Utd",
-             deck=["Yoro sent off in the 8th minute; United down to "
-                   "10 men.",
-                   "Defeat leaves United 19th in the league on 8 points."],
-             chip="4\u20130", src="Mint / NextSportsWeb",
-             pin=(-2.99, 53.4), scene="football"),
-    13: dict(region="AMERICAS", topic="POLITICS", place="Washington",
-             head="Trump: work with Democrats to cap card rates",
-             deck=["Trump says he would work with Democrats to cap "
-                   "credit-card rates.",
-                   "Also calls for scrapping the debt ceiling; Senate "
-                   "leadership vote 1 Dec."],
-             chip="RATE CAP", src="ActiveInvestorMag",
-             pin=(-74.0, 40.6), scene="capitol"),
-    14: dict(region="AMERICAS", topic="POLITICS", place="Washington",
-             head="Democrats take both chambers",
-             deck=["House 258\u2013173, largest majority since 1992, after "
-                   "N. Carolina pickup.",
-                   "Senate leadership challenge: Van Hollen vs Schumer, "
-                   "secret ballot 1 Dec."],
-             chip="258\u2013173", src="BBC / ActiveInvestorMag",
-             pin=(-80.0, 36.0), scene="ballot"),
-    20: dict(region="AMERICAS", topic="MARKETS", place="Santa Clara",
-             head="Nvidia brings back Jensen Huang as CEO",
-             deck=["Board reinstates Huang effective immediately Mon 23 Nov; "
-                   "Trump intervened.",
-                   "Shares +31% Mon; Nasdaq +6%, S&P 500 +5%, chip index "
-                   "+12%."],
-             chip="+31% HUANG BACK", src="Reuters",
-             pin=(-122.0, 37.35), scene="chip"),
-}
-
-LEAD_WIDE = 10
-LEADS = [9, 8]
-MINIS_A = [20, 1, 2, 3, 4, 5, 6, 7, 11, 12, 13, 14]
-MINIS_B = [20, 4, 1, 3, 2, 7, 5, 6, 14, 13, 12, 11]
-
-BRIEFS_N = [
-    (16, "N. Korea weighs closing Swiss office, Pyongyang (KCNA, Tue)"),
-    (17, "US mulls military training for Syrian forces, first since 2024"),
-    (18, "Congo halts cobalt exports from 30 Nov (Reuters)"),
-    (19, "Indonesia factory blaze kills 24, dozens missing (Reuters)"),
-    (20, "CrowdStrike snaps up Zscaler in $44bn deal (Reuters)"),
-    (21, "Trump hosts meme-coin gala as token hits record lows (Reuters)"),
-    (22, "US Army to detonate lead stockpile in Iowa: 68 barrels (Reuters)"),
-    (23, "India considers rice export duties as prices rise (Reuters)"),
-    (24, "COP31 adopted 46 decisions despite no cover deal (Reuters)"),
-    (25, "Miley Cyrus weds Maxx Morando in California (Reuters)"),
-    (26, "Japan factory PMI 53.7 in Nov; output + orders up (Tue 00:35 UTC)"),
-    (27, "Singapore lifts 2026 forecast to ~6.0% after Q3 +6.1% (Reuters)"),
-    (28, "StarHub agrees $3.8bn all-share deal for M1 (Reuters, Tue)"),
-    (29, "Wellington draw sets up 2nd Test, Christchurch 27 Nov-1 Dec"),
-    (30, "Kraken CAD flash crash to ~$17,000 Sat; trades stand"),
-    (31, "UK\u2013EU Brexit reset: Burnham calls it \u201clandmark\u201d (BBC)"),
-    (32, "India\u2013EU trade pact likely signed 16 Dec, Brussels (JagranJosh)"),
-    (33, "Tata Steel sells pipe unit to APL Apollo, \u20b928,000 cr (ObserverVoice)"),
-    (34, "FBI probes hack of its crime database (AP)"),
-    (35, "Solana launches solana.ai for AI agents (Gadgets360)"),
-    (36, "UN AI weapons talks continue, states agree (salonvision)"),
+REGIONS = [
+    ("EUROPE 7", (38, 92, 168)),
+    ("MIDDLE EAST 4", (196, 154, 44)),
+    ("AFRICA 1", (150, 84, 160)),
+    ("AMERICAS 8", (178, 32, 28)),
+    ("ASIA 1", (70, 150, 60)),
+    ("SOUTH ASIA 4", (220, 110, 30)),
+    ("ASIA-PACIFIC 4", (30, 150, 160)),
+    ("OCEANIA 1", (110, 110, 110)),
+    ("WORLD 4", (60, 60, 60)),
 ]
 
 TIMELINE = [
-    ("04:24 WIB TUE", "KCNA: North Korea weighs closing Swiss office in "
-     "Pyongyang \u2014 Reuters"),
-    ("07:23 WIB TUE", "Gold edges up on bargain buying after sell-off \u2014 "
-     "Reuters (00:23 GMT)"),
-    ("07:35 WIB TUE", "Japan factory PMI 53.7; output + export orders pick "
-     "up \u2014 Reuters (00:35 UTC)"),
-    ("MON EVE UTC", "Nvidia board reinstates Huang as CEO; shares +31% \u2014 "
-     "Reuters, reported Mon evening"),
-    ("MON EVE UTC", "Zelenskyy announces Merkury sinking; US sanctions ~30 "
-     "Iran exchange houses \u2014 reported Mon evening"),
+    ("04:24 WIB TUE", "KCNA: North Korea weighs closing Swiss office"),
+    ("12:52 UTC MON", "Bitcoin prints $61,284 - CoinPaprika"),
+    ("MON EVE UTC", "Zelenskyy announces Merkury sinking"),
+    ("MON EVE UTC", "US Treasury sanctions ~30 Iran exchange houses"),
+    ("SUN NIGHT", "Sparta II towed out of Finnish waters"),
+    ("SUN NIGHT", "COP31 closing plenary ends with no deal"),
 ]
 
-DATECHECK = [
-    "186-drone night over Ukraine, 161 downed \u2014 Fri 21\u2013Sun 22 Nov",
-    "Hong Kong Election Committee: 856 candidates, 723 seats \u2014 Sun 22 Nov",
-    "Alcaraz beats Zverev, first ATP Finals title \u2014 Sun 22 Nov",
-    "Verstappen wins Las Vegas Grand Prix \u2014 Sun 22 Nov",
-    "Wembanyama scores 50, Spurs 114\u201391 Pelicans \u2014 Sun 22 Nov",
-    "India declare 720/9 \u2014 Sun 22 Nov (the DRAW is the news, Mon 23 Nov)",
-    "Huang resigns after affair admission \u2014 Thu 12 Nov (the REINSTATEMENT "
-    "is the news, Mon 23 Nov)",
+# card: (num, kind, tag, headline, deck, chip, source)
+LEADS = [
+    (1, "ship", "BENGHAZI, LIBYA - EUROPE - WAR AT SEA",
+     "Ukraine sinks Russian warship Merkury off Libya",
+     "7 Ukrainian sea drones launched; Steregushchiy-class corvette Merkury sunk at Benghazi; Ka-27 helicopter destroyed aboard; MV Angara hit; Zelenskyy announced Mon; SBU: legitimate military targets.",
+     "7 SEA DRONES - MERKURY SUNK", "REPORTED - CNN / Times / WSJ / AP"),
+    (3, "city", "KYIV REGION, UKRAINE - EUROPE - WAR",
+     "Russian strikes kill at least 15 near Kyiv",
+     "Kyiv strikes: 11 killed in a block of flats in Dymer; a drone hit a 6-floor building in Kyiv Mon, 5 injured; Zelenskyy to CNN on Putin: for us, he is a killer.",
+     "15 KILLED - 11 IN DYMER", "REPORTED - Times / AP"),
+    (5, "bank", "WASHINGTON - MIDDLE EAST - SANCTIONS",
+     "US sanctions ~30 Iran exchange houses",
+     "Iran sanctions: Treasury Mon 23 Nov named ~30 Iran-based and linked financial exchange houses and executives, core of shadow banking evading sanctions; Rubio meets Qatar PM.",
+     "~30 SANCTIONED", "REPORTED - AP / Treasury"),
 ]
 
-NUMSTRIP = [
-    ("7", "SEA DRONES"),
-    ("$3.8BN", "GTA VI DAY ONE"),
-    ("$61,284", "BITCOIN"),
-    ("$3,588", "GOLD +1.5%"),
-    ("+31%", "NVIDIA"),
-    ("NO DEAL", "COP31"),
-    ("258\u2013173", "HOUSE"),
+GRID = [
+    (20, "chart", "NEW YORK - AMERICAS - MARKETS",
+     "Nvidia brings back Jensen Huang as CEO",
+     "Board reinstates Huang Mon 23 Nov after Trump intervened; Huang resigned 12 Nov; shares +31% Mon, Nasdaq +6%.",
+     "+31% - HUANG BACK", "REPORTED - Reuters"),
+    (4, "globe", "ANTALYA, TURKIYE - WORLD - CLIMATE",
+     "COP31 ends with no deal - first since 2000",
+     "Antalya Pact NOT adopted; final text dropped fossil fuels; 44 h overtime, longest COP ever.",
+     "NO DEAL - FIRST SINCE 2000", "REPORTED - Times / Guardian"),
+    (6, "city", "GAZA CITY - MIDDLE EAST - CONFLICT",
+     "Israeli strikes kill 3 in Gaza",
+     "3 killed Mon in separate strikes in Gaza, incl. a UNRWA employee; Shifa Hospital and the agency confirm.",
+     "3 KILLED", "REPORTED - AP"),
+    (7, "city", "WESTERN YEMEN - MIDDLE EAST - WAR",
+     "Strike kills 11 in western Yemen",
+     "Houthi officials say a Saudi-backed forces strike Mon in Yemen killed 11 and wounded 19.",
+     "11 KILLED - 19 WOUNDED", "REPORTED - AP"),
+    (2, "ship", "GULF OF FINLAND - EUROPE - SEA",
+     "Russian cargo ship Sparta II hit, towed clear",
+     "Hit by 2 drones Saturday; Finland led Loviisa rescue, all 16 crew off; towed out Sunday night; 121 m ship.",
+     "16 CREW SAFE", "REPORTED - Reuters / Times / WSJ"),
+    (8, "chart", "AMERICAS - MARKETS",
+     "Gold rebounds 1.5% to $3,588",
+     "Bullion +1.5% Mon after worst week in 8 months, off a 14-month low; PCE due 25 Nov. Plain: gold 3588.",
+     "$3,588/OZ +1.5%", "REPORTED - Reuters"),
+    (9, "chart", "WORLD - CRYPTO",
+     "Bitcoin steadies near $61,284",
+     "Bitcoin 61284 Mon 12:52 UTC, +1.1% in 24 h, -4.5% in 7 d; low $55,100; Kraken flash crash Sat.",
+     "$61,284", "REPORTED - CoinPaprika / BitcoinWorld"),
+    (10, "globe", "LOS ANGELES - AMERICAS - BUSINESS",
+     "GTA VI takes $3.8bn on day one",
+     "GTA VI is the biggest entertainment launch on record, past every game launch and single-day film box office.",
+     "$3.8BN DAY ONE", "REPORTED - ActiveInvestorMag"),
+    (14, "bank", "WASHINGTON - AMERICAS - POLITICS",
+     "Democrats take both chambers",
+     "Democrats 258-173: largest House majority since 1992, 258-173, after a North Carolina pickup. Plain: democrats 258.",
+     "258-173", "REPORTED - BBC"),
+    (11, "field", "WELLINGTON - OCEANIA - CRICKET",
+     "New Zealand bat out draw with India",
+     "Wellington: NZ 239/5, Mitchell 49 not out, Phillips 26 not out; India 720/9 declared; NZ 368 first innings.",
+     "DRAW - 239/5", "REPORTED - HS / WicketPulse"),
 ]
 
-REGION_STRIP = [("EUROPE", 4, RUST), ("MIDDLE EAST", 3, TEAL),
-                ("AMERICAS", 5, GOLD), ("WORLD", 2, NAVY),
-                ("OCEANIA", 1, SLATE)]
+FULL_FACTS = {
+    "cop31": ("COP31 full record: cover decision / Antalya Pact NOT adopted; final text dropped "
+              "every mention of fossil fuels; EU, UK, Panama, Marshall Islands and Norway rejected "
+              "it; 44 h overtime, longest COP ever; Guterres deeply disappointed Mon; over 90 "
+              "countries signed the electrification side pledge; unresolved text goes to COP32 "
+              "Addis Ababa Nov 2027."),
+    "wellington": ("Wellington full record: NZ 239/5 (Mitchell 49 not out off 186 balls, Phillips "
+                   "26 not out off 126; 63-run stand, 258 balls); India 720/9 declared (Rahul 136, "
+                   "Pant 128, Gill 98); NZ 368 (Nicholls 175 not out, Phillips 118); 2nd Test "
+                   "Christchurch 27 Nov - 1 Dec."),
+    "sparta": ("Sparta II full record: 121 m ship bound for Kaliningrad; PM Orpo: Ukraine has the "
+               "right to fight back; towed out of Finnish waters Sunday night."),
+    "huang": ("Huang full record: board reinstates Huang effective immediately Mon 23 Nov after "
+              "Trump intervened; shares +31% Mon, Nasdaq +6%, S&P 500 +5%, chip index +12%."),
+    "gold": "Gold full record: 10-year yield about 4.96%; traders await US PCE inflation report due 25 Nov.",
+    "bitcoin": ("Bitcoin full record: weekend low about $55,100; Kraken CAD flash crash to about "
+                "$17,000 equivalent Sat, trades stand."),
+    "merkury": "Merkury full record: SBU calls the ships legitimate military targets on the Syrian Express line.",
+    "house": "House full record: Democrats take both chambers, sources BBC and ActiveInvestorMag; 258-173 after the North Carolina pickup.",
+}
 
-FOOTER_SRC = ("Sources: Reuters \u00b7 AP \u00b7 CNN \u00b7 The Times \u00b7 WSJ "
-              "\u00b7 BBC \u00b7 Guardian \u00b7 CoinPaprika \u00b7 ActiveInvestorMag "
-              "\u00b7 HS \u00b7 WicketPulse \u00b7 Mint \u00b7 IANS \u00b7 JagranJosh "
-              "\u00b7 ObserverVoice \u00b7 Treasury \u00b7 KCNA.")
-FOOTER_LEGEND = ("Certainty: REPORTED = confirmed by at least one wire. "
-                 "CLAIM = attributed, not confirmed. Pictures and dotted map: "
-                 "original, drawn in code.")
+BRIEFS = [
+    "14. Lisbon cost-of-living march (EUROPE, JagranJosh)",
+    "15. UK-EU Brexit reset deal, Burnham landmark (EUROPE, BBC)",
+    "16. Liverpool 4-0 Man Utd, Yoro sent off 8th min, Pochettino debut (EUROPE)",
+    "17. Euro zone PMI 51.7, fifth month of expansion (EUROPE, Reuters)",
+    "18. US discussing military training for Syrian forces, first since 2024 (MIDDLE EAST, Reuters)",
+    "19. Congo halts cobalt exports from 30 Nov (AFRICA, Reuters)",
+    "20. Trump: work with Democrats to cap card rates; Van Hollen challenges Schumer, secret ballot 1 Dec (AMERICAS)",
+    "21. FBI probes hack of its crime database - fbi probe (AMERICAS, AP)",
+    "22. Mets and A.J. Ewing agree $95m, 8-year deal (AMERICAS, AP)",
+    "23. Miley Cyrus marries Maxx Morando in California - miley cyrus (AMERICAS, BBC)",
+    "24. North Korea weighs shutting Swiss diplomatic office in Pyongyang (ASIA, KCNA)",
+    "25. Nepal PM Balendra Shah ends Delhi state visit, met Modi (SOUTH ASIA, IANS)",
+    "26. India-EU free-trade pact likely signed 16 Dec in Brussels (SOUTH ASIA, JagranJosh)",
+    "27. Tata Steel sells pipe business to APL Apollo, Rs 28,000 crore (SOUTH ASIA, ObserverVoice)",
+    "28. SpiceJet pilot seeks urgent financial and safety audit; IndiGo holds 65.9% domestic (SOUTH ASIA, ObserverVoice)",
+    "29. Indonesia: 24 killed in factory blaze, dozens missing (ASIA-PACIFIC, Reuters)",
+    "30. Hong Kong restricts drones, harbour and Wan Chai roads for Interpol summit, 30 Nov - 3 Dec (ASIA-PACIFIC, HK News TV)",
+    "31. Hong Kong CPI rises 2.2% year on year in October (ASIA-PACIFIC, HK News TV)",
+    "32. KOSPI falls about 3% Monday to 10-month low (ASIA-PACIFIC, Reuters)",
+    "33. UN states agree to keep negotiating lethal AI weapons - un ai weapons (WORLD, salonvision)",
+    "34. Solana launches solana.ai, platform for autonomous AI agents - solana (WORLD, Gadgets360)",
+]
 
-# ------------------------------------------------------------------- scenes
-# Flat layered scenes, one per card topic. Each fills its strip with a sky
-# band, 2-3 silhouette layers and a big data chip. All drawn in code.
+BRIEF_SHORT = [
+    "14. LISBON COST-OF-LIVING MARCH (EUR)",
+    "15. UK-EU BREXIT RESET DEAL (EUR, BBC)",
+    "16. LIVERPOOL 4-0 MAN UTD, YORO OFF (EUR)",
+    "17. EURO ZONE PMI 51.7, 5TH MONTH (EUR)",
+    "18. US-SYRIA TRAINING TALKS (ME, REUTERS)",
+    "19. CONGO HALTS COBALT EXPORTS (AFRICA)",
+    "20. TRUMP CARD RATES; SCHUMER VOTE (AMER)",
+    "21. FBI PROBE: CRIME DATABASE HACK (AMER)",
+    "22. METS SIGN EWING $95M, 8 YEARS (AMER)",
+    "23. MILEY CYRUS MARRIES MORANDO (AMER)",
+    "24. N. KOREA: SWISS OFFICE IN DOUBT (ASIA)",
+    "25. NEPAL PM SHAH ENDS DELHI VISIT (S.ASIA)",
+    "26. INDIA-EU PACT LIKELY 16 DEC (S.ASIA)",
+    "27. TATA STEEL SELLS PIPE BIZ (S.ASIA)",
+    "28. SPICEJET AUDIT CALL; INDIGO 65.9%",
+    "29. INDONESIA FACTORY BLAZE: 24 DEAD",
+    "30. HK DRONE CURBS FOR INTERPOL SUMMIT",
+    "31. HONG KONG CPI +2.2% IN OCTOBER",
+    "32. KOSPI -3% MON, 10-MONTH LOW",
+    "33. UN AI WEAPONS TALKS CONTINUE (WORLD)",
+    "34. SOLANA LAUNCHES SOLANA.AI (WORLD)",
+]
 
-def scene(draw, kind, box, variant):
-    x0, y0, x1, y1 = box
-    w, h = x1 - x0, y1 - y0
-    skies = {"ship": (70, 110, 140), "ship2": (96, 130, 150),
-             "city": (120, 70, 60), "city2": (140, 90, 70),
-             "summit": (46, 110, 96), "bank": (60, 80, 90),
-             "hills": (150, 110, 70), "gold": (176, 140, 60),
-             "coin": (200, 130, 40), "gta": (150, 60, 110),
-             "cricket": (70, 130, 80), "football": (40, 110, 60),
-             "capitol": (90, 90, 110), "ballot": (70, 90, 130),
-             "chip": (40, 60, 110)}
-    sky = skies.get(kind, (90, 90, 100))
-    draw.rectangle([x0, y0, x1, y1], fill=sky)
-    # sun / moon disc, variant-dependent side
-    cx = x0 + (w * 3 // 4 if variant == "A" else w // 4)
-    cy = y0 + h // 3
-    r = h // 4
-    draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(247, 220, 150))
-    if kind in ("ship", "ship2"):
-        # sea + hull + mast + drone dots
-        draw.rectangle([x0, y0 + h * 2 // 3, x1, y1], fill=(24, 60, 90))
-        for i in range(5):
-            wx = x0 + w * (i + 1) // 6
-            draw.arc([wx - 40, y0 + h * 2 // 3 - h // 6, wx + 40,
-                      y0 + h * 2 // 3 + h // 6], 180, 360,
-                     fill=(200, 220, 235), width=5)
-        draw.polygon([(x0 + w // 6, y0 + h * 2 // 3),
-                      (x0 + w * 5 // 6, y0 + h * 2 // 3),
-                      (x0 + w * 3 // 4, y1 - 8),
-                      (x0 + w // 4, y1 - 8)], fill=(20, 20, 26))
-        draw.rectangle([x0 + w // 2 - 6, y0 + h // 4, x0 + w // 2 + 6,
-                        y0 + h * 2 // 3], fill=(20, 20, 26))
-        for dx, dy in ((0.15, 0.22), (0.35, 0.14), (0.55, 0.24),
-                       (0.72, 0.15), (0.88, 0.26)):
-            px, py = x0 + w * dx, y0 + h * dy
-            draw.ellipse([px - 9, py - 9, px + 9, py + 9], fill=INK)
-            draw.line([px, py + 9, px, py + 26], fill=INK, width=4)
-    elif kind in ("city", "city2"):
-        base = y0 + h * 3 // 5
-        draw.rectangle([x0, base, x1, y1], fill=(40, 30, 28))
-        bw = w // 7
-        for i in range(7):
-            bh = h * (0.28 + 0.07 * ((i * 37) % 5)) / 1.0
-            bx = x0 + i * bw
-            draw.rectangle([bx + 8, base - bh, bx + bw - 8, y1],
-                           fill=(16, 14, 18) if i % 2 else (52, 38, 34))
-            for wy in range(3):
-                draw.rectangle([bx + 18, base - bh + 16 + wy * 26,
-                                bx + 34, base - bh + 30 + wy * 26],
-                               fill=(247, 220, 150))
-        draw.rectangle([x0, base, x1, base + 10], fill=GOLD)
-    elif kind == "summit":
-        # globe + flags
-        draw.ellipse([x0 + w // 2 - h // 3, y0 + h // 6,
-                      x0 + w // 2 + h // 3, y0 + h * 5 // 6],
-                     fill=(36, 120, 110))
-        draw.arc([x0 + w // 2 - h // 4, y0 + h // 4,
-                  x0 + w // 2 + h // 4, y0 + h * 3 // 4], 0, 360,
-                 fill=(220, 235, 230), width=6)
-        draw.line([x0 + w // 2, y0 + h // 6, x0 + w // 2, y0 + h * 5 // 6],
-                  fill=(220, 235, 230), width=6)
-        for fx in (0.12, 0.30, 0.70, 0.88):
-            px = x0 + w * fx
-            draw.line([px, y0 + h // 2, px, y1 - 6], fill=INK, width=5)
-            draw.polygon([(px, y0 + h // 2), (px + 44, y0 + h // 2 + h // 4),
-                          (px, y0 + h // 2 + h // 2)],
-                         fill=RUST if fx < 0.5 else GOLD)
+DATE_CHECK = [
+    "186-drone night over Ukraine - Fri 21 to Sun 22 Nov",
+    "Alcaraz beats Zverev, first ATP Finals title - Sun 22 Nov",
+    "Verstappen wins Las Vegas Grand Prix - Sun 22 Nov",
+    "Wembanyama scores 50, Spurs 114-91 - Sun 22 Nov",
+    "Nvidia CEO Huang resigns - Thu 12 Nov (the return is today's news)",
+    "Myanmar ICJ genocide ruling - Thu 19 Nov",
+    "Microsoft 365 outage - Fri 20 Nov",
+]
+
+PINS = [(1, 470, 30), (3, 430, 22), (2, 415, 12), (5, 560, 40),
+        (6, 478, 44), (7, 492, 52), (4, 452, 36), (20, 60, 30),
+        (8, 300, 26), (9, 330, 60), (10, 45, 42), (14, 70, 36),
+        (11, 700, 108)]
+
+
+# ---------------------------------------------------------------- scenes
+def scene(cv, x, y, w, h, kind, num):
+    if kind == "ship":
+        cv.rect(x, y, w, h // 2, SKY)
+        cv.rect(x, y + h // 2, w, h - h // 2, SEA)
+        for i in range(6):
+            cv.rect(x + 8 + i * (w // 6), y + h // 2 + 4, 14, 2, CREAM)
+        cv.rect(x + w // 4, y + h // 2 - 10, w // 2, 9, (70, 74, 80))
+        cv.rect(x + w // 4 + 10, y + h // 2 - 18, w // 4, 8, (90, 94, 100))
+        cv.rect(x + w // 2, y + h // 2 - 30, 4, 14, INK)
+        cv.rect(x + w // 3, y + h // 2 - 22, 22, 6, (120, 124, 130))
+    elif kind == "city":
+        cv.rect(x, y, w, h, (32, 36, 54))
+        bx = x + 6
+        seed = num * 7
+        while bx < x + w - 18:
+            bw = 16 + (seed % 13)
+            bh = h - 8 - (seed % (h // 2))
+            cv.rect(bx, y + h - bh, bw, bh, (52, 56, 74))
+            for wy in range(y + h - bh + 4, y + h - 6, 8):
+                for wx in range(bx + 3, bx + bw - 3, 7):
+                    if (wx + wy + seed) % 3 == 0:
+                        cv.rect(wx, wy, 3, 3, GOLD)
+            bx += bw + 5
+            seed += 11
     elif kind == "bank":
-        base = y0 + h * 3 // 5
-        draw.rectangle([x0, base, x1, y1], fill=(30, 36, 44))
+        cv.rect(x, y, w, h, TAN)
+        mid = x + w // 2
+        for i in range(w // 2):
+            cv.line(mid - w // 2 + i, y + 14, mid, y + 2, (120, 96, 52))
+            cv.line(mid, y + 2, mid + i, y + 14, (120, 96, 52))
         for i in range(5):
-            bx = x0 + w * (0.10 + i * 0.18)
-            draw.rectangle([bx, y0 + h // 3, bx + 46, base], fill=CREAM)
-        draw.polygon([(x0 + w // 2 - w // 3, y0 + h // 3),
-                      (x0 + w // 2 + w // 3, y0 + h // 3),
-                      (x0 + w // 2, y0 + h // 8)], fill=RUST)
-    elif kind == "hills":
-        draw.polygon([(x0, y1), (x0 + w // 3, y0 + h // 3),
-                      (x0 + w * 2 // 3, y1)], fill=(90, 70, 40))
-        draw.polygon([(x0 + w // 3, y1), (x0 + w * 2 // 3, y0 + h // 4),
-                      (x1, y1)], fill=(60, 48, 30))
-        draw.rectangle([x0, y0 + h * 4 // 5, x1, y1], fill=(52, 40, 26))
-    elif kind == "gold":
-        base = y0 + h * 3 // 5
-        draw.rectangle([x0, base, x1, y1], fill=(120, 90, 30))
+            cx0 = x + 10 + i * (w - 20) // 5
+            cv.rect(cx0, y + 16, 6, h - 22, (240, 232, 200))
+        cv.rect(x + 4, y + h - 6, w - 8, 4, (120, 96, 52))
+    elif kind == "chart":
+        cv.rect(x, y, w, h, (226, 232, 214))
         for i in range(4):
-            bx = x0 + w * (0.08 + i * 0.22)
-            bh = h // 2 - (i % 2) * (h // 6)
-            bw2 = min(120, w // 5)
-            draw.rectangle([bx, base - bh, bx + bw2,
-                            base], fill=(232, 190, 80),
-                           outline=(140, 105, 30), width=5)
-        draw.line([x0, y0 + h // 4, x0 + w // 3, y0 + h // 2,
-                   x0 + w * 2 // 3, y0 + h // 5, x1, y0 + h // 2],
-                  fill=WHITE, width=10)
-    elif kind == "coin":
-        cx, cy = x0 + w // 2, y0 + h // 2
-        r = h * 2 // 5
-        draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(232, 180, 60),
-                     outline=(140, 100, 20), width=8)
-        draw.ellipse([cx - r * 3 // 5, cy - r * 3 // 5, cx + r * 3 // 5,
-                      cy + r * 3 // 5], outline=(140, 100, 20), width=6)
-        draw.text((cx, cy), "B", font=_playfair(h // 2), fill=(120, 80, 10),
-                  anchor="mm")
-        draw.line([x0, y1 - 30, x0 + w // 4, y0 + h * 2 // 3,
-                   x0 + w // 2, y0 + h // 2, x1, y0 + h // 4],
-                  fill=WHITE, width=9)
-    elif kind == "gta":
-        base = y0 + h * 3 // 5
-        draw.rectangle([x0, base, x1, y1], fill=(24, 18, 34))
-        bw = w // 8
-        for i in range(8):
-            bh = h * (0.28 + 0.07 * ((i * 53) % 5))
-            bx = x0 + i * bw
-            col = (200, 60, 140) if i % 3 == 0 else (
-                (60, 200, 220) if i % 3 == 1 else (250, 180, 60))
-            draw.rectangle([bx + 6, base - bh, bx + bw - 6, y1], fill=col)
-            for wy in range(2):
-                draw.rectangle([bx + 14, base - bh + 14 + wy * 24,
-                                bx + 26, base - bh + 26 + wy * 24],
-                               fill=(255, 250, 220))
-        draw.rectangle([x0, base, x1, base + 8], fill=WHITE)
-    elif kind == "cricket":
-        base = y0 + h * 3 // 5
-        draw.rectangle([x0, base, x1, y1], fill=(46, 110, 60))
-        br = max(10, h // 4)
-        draw.ellipse([x0 + w // 2 - br, y0 + h // 4 - br,
-                      x0 + w // 2 + br, y0 + h // 4 + br], fill=RED)
-        draw.line([x0 + w // 6, base, x0 + w * 5 // 6, base], fill=CREAM,
-                  width=8)
-        bh = h * 3 // 4
-        draw.polygon([(x0 + w // 4, y0 + h // 5), (x0 + w // 4 + 26,
-                      y0 + h // 5 + bh), (x0 + w // 4 + 60,
-                      y0 + h // 5 + bh), (x0 + w // 4 + 34, y0 + h // 5)],
-                     fill=(210, 170, 110))
-    elif kind == "football":
-        base = y0 + h * 3 // 5
-        draw.rectangle([x0, base, x1, y1], fill=(30, 90, 50))
-        bw = min(70, h // 2)
-        bt = y0 + h // 5
-        bb = min(y1 - 4, bt + h * 3 // 5)
-        draw.ellipse([x0 + w // 2 - bw, bt, x0 + w // 2 + bw, bb],
-                     fill=WHITE, outline=INK, width=6)
-        draw.polygon([(x0 + w // 2 - bw, bt + (bb - bt) // 2),
-                      (x0 + w // 2 - bw // 3, bt + (bb - bt) // 6),
-                      (x0 + w // 2 + bw // 2, bt + (bb - bt) // 4),
-                      (x0 + w // 2, bt + (bb - bt) * 3 // 4),
-                      (x0 + w // 2 - bw // 2, bt + (bb - bt) * 5 // 6)],
-                     fill=INK)
-        draw.line([x0, base, x1, base], fill=WHITE, width=8)
-    elif kind in ("capitol", "ballot"):
-        base = y0 + h * 3 // 5
-        draw.rectangle([x0, base, x1, y1], fill=(52, 52, 62))
+            cv.rect(x + 4, y + 4 + i * (h // 4), w - 8, 1, LGREY)
+        pts = [(x + 6, y + h - 8), (x + w // 3, y + h // 2),
+               (x + 2 * w // 3, y + h // 3), (x + w - 8, y + 6)]
+        for a, b in zip(pts, pts[1:]):
+            cv.line(a[0], a[1], b[0], b[1], GREEN, 3)
+        cv.line(pts[-1][0], pts[-1][1], pts[-1][0] - 8, pts[-1][1] + 2, GREEN, 3)
+        cv.line(pts[-1][0], pts[-1][1], pts[-1][0] - 2, pts[-1][1] + 8, GREEN, 3)
+    elif kind == "field":
+        cv.rect(x, y, w, h, (74, 140, 66))
+        cv.rect(x + w // 2 - 9, y + 3, 18, h - 6, TAN)
+        cv.rect(x + w // 2 - 1, y + 8, 2, 10, CREAM)
+        cv.rect(x + w // 2 - 1, y + h - 18, 2, 10, CREAM)
+        cv.circle(x + w // 2 + 16, y + h // 2, 4, RED)
+    else:  # globe
+        cv.rect(x, y, w, h, DBLUE)
+        cv.circle(x + w // 2, y + h // 2, min(w, h) // 2 - 3, (64, 130, 180))
         for i in range(5):
-            bx = x0 + w * (0.14 + i * 0.17)
-            draw.rectangle([bx, y0 + h // 3, bx + 40, base], fill=CREAM)
-        draw.ellipse([x0 + w // 2 - 70, y0 + h // 8, x0 + w // 2 + 70,
-                      y0 + h // 3], fill=CREAM)
-        draw.rectangle([x0 + w // 2 - 90, y0 + h // 3 - 14,
-                        x0 + w // 2 + 90, y0 + h // 3 + 6], fill=CREAM)
-        if kind == "ballot":
-            draw.rectangle([x0 + w * 3 // 4 - 60, y0 + h // 2,
-                            x0 + w * 3 // 4 + 60, y1 - 10], fill=RUST)
-            draw.rectangle([x0 + w * 3 // 4 - 90, y0 + h // 2 - 26,
-                            x0 + w * 3 // 4 + 90, y0 + h // 2], fill=INK)
-    elif kind == "chip":
-        cx, cy = x0 + w // 2, y0 + h // 2
-        hw = min(150, w // 2 - 10)
-        hh = h * 2 // 5
-        draw.rectangle([cx - hw, cy - hh, cx + hw, cy + hh], fill=(20, 24, 34),
-                       outline=GOLD, width=8)
-        for i in range(3):
-            yy = cy - hh + (i + 1) * (2 * hh // 4)
-            draw.line([cx - hw + 20, yy, cx + hw - 20, yy],
-                      fill=(70, 90, 120), width=6)
-        for i in range(5):
-            px = cx - hw + 20 + i * ((2 * hw - 40) // 4)
-            draw.line([px, cy - hh + 8, px, cy + hh - 8], fill=GOLD, width=6)
-        draw.polygon([(x1 - 90, y0 + h // 6), (x1 - 30, y0 + h // 6),
-                      (x1 - 60, y0 + h * 2 // 3)], fill=(60, 200, 120))
+            cv.circle(x + w // 3 + i * 7, y + h // 3 + (i % 3) * 6, 4, (90, 170, 110))
+            cv.circle(x + w // 2 + i * 6, y + 2 * h // 3 - (i % 2) * 5, 4, (90, 170, 110))
 
-# ------------------------------------------------------------------- cards
-def card_number(draw, x, y, num, size=54):
-    s = str(num)
-    f = _playfair(size)
-    tw = draw.textlength(s, font=f)
-    d = size + 26
-    draw.ellipse([x, y, x + d, y + d], fill=RUST)
-    draw.text((x + d / 2, y + d / 2), s, font=f, fill=WHITE, anchor="mm")
-    return x + d + 14
 
-def draw_lead_wide(draw, num, box, variant):
-    x0, y0, x1, y1 = box
-    c = CARDS[num]
-    draw.rectangle([x0, y0, x1, y1], fill=CREAM2, outline=INK, width=4)
-    sc_h = 190
-    scene(draw, c["scene"], (x0 + 4, y0 + 4, x1 - 4, y0 + 4 + sc_h), variant)
-    # data chip overlaid on the scene strip, bottom-right
-    cf = _sans(34, bold=True)
-    tw = draw.textlength(c["chip"], font=cf) + 28
-    chip(draw, x1 - 24 - tw, y0 + 4 + sc_h - 62, c["chip"], cf, h=52)
-    tx = x0 + 28
-    ty = y0 + 208
-    nx = card_number(draw, tx, ty, num, size=58)
-    lab = f"{c['place'].upper()} \u00b7 {c['region']} \u00b7 {c['topic']}"
-    draw.text((nx, ty + 12), lab, font=_sans(34, bold=True), fill=RUST_DK)
-    hy = ty + 84
-    for line in wrap(draw, c["head"], _playfair(76), x1 - x0 - 56)[:2]:
-        draw.text((tx, hy), line, font=_playfair(76), fill=INK)
-        hy += 82
-    hy += 6
-    for para in c["deck"]:
-        for line in wrap(draw, para, _sans(38), x1 - x0 - 56):
-            draw.text((tx, hy), line, font=_sans(38), fill=(52, 46, 40))
-            hy += 42
-    tagline(draw, tx, y1 - 32, c["src"], _sans(30, bold=True))
+def card(cv, x, y, w, h, item, lead=False):
+    num, kind, tag, head, deck, chip, source = item
+    cv.rect(x, y, w, h, PAPER)
+    cv.outline(x, y, w, h, INK, 2)
+    sh = 48 if lead else 30
+    scene(cv, x + 2, y + 2, w - 4, sh, kind, num)
+    cv.circle(x + 17, y + 17, 12, BLUE)
+    ns = str(num)
+    cv.text(x + 17 - cv.text_width(ns, 1) // 2, y + 13, ns, 1, CREAM)
+    # source label sits on the scene band, right side, on a paper tab
+    sw = cv.text_width(source, 1) + 8
+    cv.rect(x + w - sw - 4, y + 4, sw, 13, PAPER)
+    cv.text(x + w - sw, y + 7, source, 1, GREY)
+    ty = y + sh + 6
+    while cv.text_width(tag, 1) > w - 14 and " - " in tag:
+        tag = tag.rsplit(" - ", 1)[0]
+    cv.text(x + 7, ty, tag, 1, RED)
+    ty += 11
+    hs = 2 if lead else 1
+    maxc = (w - 14) // (6 * hs)
+    ty = draw_text_block(cv, x + 7, ty, head, hs, INK, maxc, 8 * hs + 3, 2 if lead else 3)
+    ty += 2
+    maxc1 = (w - 14) // 6
+    deck_lines = 5 if lead else 4
+    draw_text_block(cv, x + 7, ty, deck, 1, (52, 52, 48), maxc1, 10, deck_lines)
+    by = y + h - 17
+    cv.rect(x + 6, by, cv.text_width(chip, 1) + 10, 13, INK)
+    cv.text(x + 11, by + 3, chip, 1, CREAM)
 
-def lead(draw, num, box, variant):
-    x0, y0, x1, y1 = box
-    c = CARDS[num]
-    draw.rectangle([x0, y0, x1, y1], fill=CREAM2, outline=INK, width=4)
-    sc_h = 170
-    scene(draw, c["scene"], (x0 + 4, y0 + 4, x1 - 4, y0 + 4 + sc_h), variant)
-    # data chip overlaid on the scene strip, bottom-right
-    cf = _sans(30, bold=True)
-    tw = draw.textlength(c["chip"], font=cf) + 26
-    chip(draw, x1 - 22 - tw, y0 + 4 + sc_h - 56, c["chip"], cf, h=48)
-    tx = x0 + 26
-    ty = y0 + 184
-    nx = card_number(draw, tx, ty, num, size=52)
-    lab = f"{c['place'].upper()} \u00b7 {c['region']}"
-    draw.text((nx, ty + 10), lab, font=_sans(30, bold=True), fill=RUST_DK)
-    hy = ty + 80
-    for line in wrap(draw, c["head"], fb(62), x1 - x0 - 52)[:2]:
-        draw.text((tx, hy), line, font=fb(62), fill=INK)
-        hy += 68
-    hy += 6
-    for para in c["deck"]:
-        for line in wrap(draw, para, fr(31), x1 - x0 - 52):
-            draw.text((tx, hy), line, font=fr(31), fill=(52, 46, 40))
-            hy += 38
-    tagline(draw, tx, y1 - 40, c["src"], _sans(28, bold=True))
 
-def mini(draw, num, box, variant):
-    x0, y0, x1, y1 = box
-    c = CARDS[num]
-    draw.rectangle([x0, y0, x1, y1], fill=WHITE, outline=INK, width=3)
-    sc_h = 60
-    scene(draw, c["scene"], (x0 + 3, y0 + 3, x1 - 3, y0 + 3 + sc_h), variant)
-    tx = x0 + 20
-    ty = y0 + 3 + sc_h + 10
-    nx = card_number(draw, tx, ty, num, size=40)
-    lab = f"{c['place'].upper()} \u00b7 {c['region']} \u00b7 {c['topic']}"
-    draw.text((nx, ty + 6), lab, font=_sans(26, bold=True), fill=RUST_DK)
-    hy = ty + 56
-    for line in wrap(draw, c["head"], fb(46), x1 - x0 - 40)[:2]:
-        draw.text((tx, hy), line, font=fb(46), fill=INK)
-        hy += 48
-    hy += 4
-    deck_txt = " ".join(c["deck"])
-    for line in wrap(draw, deck_txt, fr(29), x1 - x0 - 40)[:2]:
-        draw.text((tx, hy), line, font=fr(29), fill=(52, 46, 40))
-        hy += 35
-    cf = _sans(26, bold=True)
-    tw = draw.textlength(c["chip"], font=cf) + 28
-    chip(draw, tx, y1 - 46, c["chip"], cf, h=40)
-    tagline(draw, tx + tw + 16, y1 - 38, c["src"], _sans(24, bold=True))
+def grain_overlay(cv):
+    """Fine deterministic print grain: lifts the page off flat colour and
+    gives the PNG its newsprint texture (and a realistic file size)."""
+    px = cv.px
+    for yy in range(cv.h):
+        base = yy * cv.w * 3
+        hrow = (yy * 19349663) & 0xFFFFFFFF
+        for xx in range(cv.w):
+            hv = ((xx * 73856093) ^ hrow) & 0xFF
+            d = (hv % 7) - 3
+            if d:
+                i = base + xx * 3
+                px[i] = max(0, min(255, px[i] + d))
+                px[i + 1] = max(0, min(255, px[i + 1] + d))
+                px[i + 2] = max(0, min(255, px[i + 2] + d))
 
-# ------------------------------------------------------------------- page
-W = 3900
-H = 3900
-MX = 90  # side margin
 
-def draw_page(variant):
-    img = Image.new("RGB", (W, H), CREAM)
-    d = ImageDraw.Draw(img)
-    x0, x1 = MX, W - MX
+# ---------------------------------------------------------------- layout
+def build(path):
+    cv = Canvas(W, H, CREAM)
+    m = 14
+    right = W - m
 
-    # ---- top rule + edition line
-    rule(d, x0, 60, x1, w=10)
-    d.text((x0, 78), "TUESDAY EDITION \u00b7 No. 328 \u00b7 ALL THE NEWS THAT IS TODAY\u2019S",
-           font=_sans(32, bold=True), fill=RUST_DK)
-    d.text((x1, 78), "PRICE: ONE DAY\u2019S NEWS", font=_sans(32, bold=True),
-           fill=RUST_DK, anchor="ra")
+    cv.text(m, 7, "TUESDAY EDITION - NO. 329 - ALL THE NEWS THAT IS TODAY'S", 1, INK)
+    cv.text_right(right, 7, "PRICE: ONE DAY'S NEWS", 1, INK)
+    cv.rect(m, 22, W - 2 * m, 2, INK)
 
-    # ---- masthead
-    d.text((W // 2, 268), "THE PORTSIDE GAZETTE", font=_playfair(180),
-           fill=RUST, anchor="mm")
-    rule(d, x0, 372, x1, w=5, fill=INK)
-    rule(d, x0, 384, x1, w=5, fill=INK)
+    cv.text_center(W // 2, 32, "THE EXCHANGE FLOOR", 6, DGREEN)
+    cv.text_center(W // 2, 82, "TUESDAY 24 NOVEMBER 2026", 3, INK)
+    cv.text_center(W // 2, 110, "34 STORIES - 9 REGIONS - EVERY ONE DATED TUESDAY 24 NOVEMBER 2026", 1, RED)
+    cv.rect(m, 124, W - 2 * m, 1, INK)
 
-    # ---- dateline (giant) + kicker
-    d.text((W // 2, 462), "Tuesday 24 November 2026", font=_playfair(96),
-           fill=INK, anchor="mm")
-    kick = "36 STORIES \u00b7 7 REGIONS \u00b7 EVERY ONE FROM TUESDAY 24 NOVEMBER 2026"
-    d.text((W // 2, 536), kick, font=_sans(34, bold=True), fill=RUST_DK,
-           anchor="mm")
-    d.text((W // 2, 580), "THE WORLD IN ONE IMAGE",
-           font=_playfair(38, italic=True), fill=RUST, anchor="mm")
-
-    # ---- number strip
-    y = 610
-    d.rectangle([x0, y, x1, y + 120], fill=RUST_DK)
-    cw = (x1 - x0) / len(NUMSTRIP)
-    for i, (big, lab) in enumerate(NUMSTRIP):
-        cx = x0 + cw * i + cw / 2
-        d.text((cx, y + 12), big, font=_playfair(54), fill=(247, 220, 150),
-               anchor="ma")
-        d.text((cx, y + 78), lab, font=_sans(26, bold=True), fill=WHITE,
-               anchor="ma")
+    # numbers strip
+    sy = 130
+    cv.rect(m, sy, W - 2 * m, 52, GREEN)
+    cw = (W - 2 * m) // 6
+    for i, (big, label) in enumerate(STRIP):
+        cx0 = m + i * cw
         if i:
-            d.line([x0 + cw * i, y + 10, x0 + cw * i, y + 110],
-                   fill=(247, 220, 150), width=3)
+            cv.rect(cx0, sy + 4, 1, 44, (90, 170, 120))
+        bs = 3 if len(big) <= 3 else 2
+        cv.text_center(cx0 + cw // 2, sy + 7, big, bs, CREAM)
+        for j, ln in enumerate(wrap(label, cw // 6 - 1)[:2]):
+            cv.text_center(cx0 + cw // 2, sy + 32 + j * 9, ln, 1, (210, 235, 205))
 
-    # ---- region strip
-    y = 746
-    d.text((x0, y), "WHERE THE NEWS IS:",
-           font=_sans(30, bold=True), fill=INK)
-    rx = x0 + 360
-    for name, n, col in REGION_STRIP:
-        label = f"{name} {n}"
-        f = _sans(30, bold=True)
-        tw = d.textlength(label, font=f)
-        d.rounded_rectangle([rx, y - 6, rx + tw + 26, y + 40], radius=20,
-                            fill=col)
-        d.text((rx + 13, y + 17), label, font=f, fill=WHITE, anchor="lm")
-        rx += tw + 26 + 16
+    # region strip
+    ry = 186
+    cv.text(m, ry + 4, "WHERE THE NEWS IS", 1, INK)
+    rx = m + cv.text_width("WHERE THE NEWS IS", 1) + 10
+    for name, col in REGIONS:
+        wchip = cv.text_width(name, 1) + 10
+        if rx + wchip > right:
+            break
+        cv.rect(rx, ry, wchip, 15, col)
+        cv.text(rx + 5, ry + 4, name, 1, CREAM)
+        rx += wchip + 5
 
-    # ---- lead wide (500) + two leads (500)
-    y = 820
-    draw_lead_wide(d, LEAD_WIDE, (x0, y, x1, y + 500), variant)
-    y = 1338
-    hw = (x1 - x0 - 24) // 2
-    lead(d, LEADS[0], (x0, y, x0 + hw, y + 500), variant)
-    lead(d, LEADS[1], (x0 + hw + 24, y, x1, y + 500), variant)
-
-    # ---- mini grid 4 x 3 (340 each)
-    y = 1856
-    minis = MINIS_A if variant == "A" else MINIS_B
-    gw = (x1 - x0 - 3 * 24) // 4
-    gh = 340
-    for r in range(3):
-        for col in range(4):
-            num = minis[r * 4 + col]
-            bx = x0 + col * (gw + 24)
-            by = y + r * (gh + 12)
-            mini(d, num, (bx, by, bx + gw, by + gh), variant)
-
-    # ---- bottom zone: ALSO ON (left) + map (right), mirrored in B
-    y = 2920
-    also_w = 2180
-    map_w = (x1 - x0) - also_w - 30
-    if variant == "A":
-        ax, mx0 = x0, x0 + also_w + 30
-    else:
-        mx0, ax = x0, x0 + map_w + 30
-    # ALSO ON
-    d.text((ax, y), "ALSO ON \u2014 21 MORE STORIES FROM THE DAY",
-           font=_sans(34, bold=True), fill=RUST_DK)
-    rule(d, ax, y + 48, ax + also_w, w=4, fill=RUST)
-    by = y + 62
-    col_w = (also_w - 30) // 2
-    for i, (n, txt) in enumerate(BRIEFS_N):
-        col = 0 if i < 11 else 1
-        row = i if i < 11 else i - 11
-        bx = ax + col * (col_w + 30)
-        yy = by + row * 48
-        f_num = _playfair(34)
-        d.text((bx, yy), f"{n}.", font=f_num, fill=RUST)
-        nw = d.textlength(f"{n}. ", font=f_num)
-        for line in wrap(d, txt, fsr(29), col_w - nw - 6)[:1]:
-            d.text((bx + nw, yy + 3), line, font=fsr(29), fill=INK)
-    # map
-    d.text((mx0, y), "WHERE IT HAPPENED \u2014 PINS MATCH STORY NUMBERS",
-           font=_sans(34, bold=True), fill=RUST_DK)
-    rule(d, mx0, y + 48, mx0 + map_w, w=4, fill=RUST)
-    mbox = (mx0, y + 62, mx0 + map_w, y + 62 + 480)
-    d.rectangle(mbox, fill=(232, 228, 208), outline=INK, width=3)
-    draw_dotted_map(d, (mbox[0] + 8, mbox[1] + 8, mbox[2] - 8, mbox[3] - 8))
-    for n in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 20]:
-        lon, lat = CARDS[n]["pin"]
-        px, py = pin_xy((mbox[0] + 8, mbox[1] + 8, mbox[2] - 8, mbox[3] - 8),
-                        lon, lat)
-        r = 25
-        d.ellipse([px - r, py - r, px + r, py + r], fill=RED,
-                  outline=WHITE, width=4)
-        d.text((px, py), str(n), font=_sans(28, bold=True), fill=WHITE,
-               anchor="mm")
-    d.text((mx0, mbox[3] + 8),
-           "Washington pins (5 \u00b7 13 \u00b7 14) nudged apart for legibility.",
-           font=_sans(26), fill=(90, 80, 70))
-
-    # ---- timeline
-    y = 3535
-    d.text((x0, y), "TUESDAY 24 NOVEMBER \u2014 AS THE DAY UNFOLDED",
-           font=_sans(34, bold=True), fill=RUST_DK)
-    rule(d, x0, y + 46, x1, w=4, fill=RUST)
-    ty = y + 58
-    sw = (x1 - x0 - 4 * 20) / 5
+    # timeline
+    tly = 208
+    cv.text(m, tly, "TUESDAY 24 NOVEMBER - AS THE DAY UNFOLDED (TIMES AS REPORTED)", 1, DGREEN)
+    tly += 12
+    tw = (W - 2 * m - 5 * 6) // 6
     for i, (when, what) in enumerate(TIMELINE):
-        sx = x0 + i * (sw + 20)
-        d.text((sx, ty), when, font=_sans(28, bold=True), fill=RUST)
-        yy = ty + 38
-        for line in wrap(d, what, _sans(27), sw)[:2]:
-            d.text((sx, yy), line, font=_sans(27), fill=INK)
-            yy += 33
+        tx = m + i * (tw + 6)
+        cv.outline(tx, tly, tw, 38, GREY, 1)
+        cv.text(tx + 5, tly + 4, when, 1, RED)
+        draw_text_block(cv, tx + 5, tly + 15, what, 1, INK, (tw - 10) // 6, 8, 3)
 
-    # ---- DATE CHECK band
-    y = 3698
-    d.rectangle([x0, y, x1, y + 146], fill=(122, 20, 20))
-    d.text((x0 + 16, y + 8),
-           "DATE CHECK \u2014 NOT TODAY\u2019S NEWS: these happened earlier; "
-           "they are not today\u2019s stories.",
-           font=_sans(27, bold=True), fill=WHITE)
-    dc_col_w = (x1 - x0 - 32 - 30) // 2
-    for i, item in enumerate(DATECHECK):
-        col = 0 if i < 4 else 1
-        row = i if i < 4 else i - 4
-        dx = x0 + 16 + col * (dc_col_w + 30)
-        dy = y + 46 + row * 24
-        d.text((dx, dy), "\u2022 " + item, font=_sans(25), fill=WHITE)
+    # lead cards
+    ly = 266
+    lw = (W - 2 * m - 2 * 8) // 3
+    for i, item in enumerate(LEADS):
+        card(cv, m + i * (lw + 8), ly, lw, 186, item, lead=True)
 
-    # ---- footer
-    d.text((x0, 3852), FOOTER_SRC, font=_sans(22), fill=INK)
-    d.text((x0, 3876), FOOTER_LEGEND, font=_sans(22), fill=INK)
-    return img
+    # grid cards, two rows of five
+    gy = 460
+    gw = (W - 2 * m - 4 * 6) // 5
+    for r in range(2):
+        for cidx in range(5):
+            item = GRID[r * 5 + cidx]
+            card(cv, m + cidx * (gw + 6), gy + r * 156, gw, 148, item)
 
-def _finalise(img):
-    """Downscale whole page to 1024x1024, quantise 256 colours.
+    # also-on + map
+    ay = 772
+    cv.text(m, ay, "ALSO ON - 21 MORE STORIES FROM THE DAY", 1, DGREEN)
+    cv.text(640, ay, "WHERE IT HAPPENED - PINS MATCH STORY NUMBERS", 1, DGREEN)
+    ay += 12
+    half = 11
+    colw = 305
+    for col in range(2):
+        yy = ay
+        for item in BRIEF_SHORT[col * half:(col + 1) * half]:
+            cv.text(m + col * (colw + 8), yy, item, 1, INK)
+            yy += 10
+    # dotted world map (stylised, original)
+    mx, my, mw, mh = 640, ay, right - 640, 106
+    cv.rect(mx, my, mw, mh, DBLUE)
+    land = [(0.06, 0.18, 0.20, 0.16), (0.16, 0.52, 0.10, 0.22),
+            (0.42, 0.14, 0.24, 0.18), (0.47, 0.40, 0.13, 0.24),
+            (0.62, 0.20, 0.30, 0.22), (0.70, 0.52, 0.12, 0.16),
+            (0.86, 0.72, 0.08, 0.10)]
+    for (fx, fy, fw, fh) in land:
+        gx = mx + int(fx * mw)
+        gy2 = my + int(fy * mh)
+        for dx in range(0, int(fw * mw), 7):
+            for dy in range(0, int(fh * mh), 7):
+                if (dx // 7 + dy // 7) % 3 != 2:
+                    cv.rect(gx + dx, gy2 + dy, 3, 3, (120, 190, 220))
+    for num, fx, fy in [(1, 300, 34), (3, 268, 24), (2, 258, 14), (5, 330, 40),
+                        (6, 292, 44), (7, 304, 52), (4, 282, 34), (20, 36, 20),
+                        (10, 22, 50), (14, 54, 38), (11, 336, 92)]:
+        px = mx + fx
+        py = my + fy
+        cv.circle(px, py, 9, RED)
+        ns = str(num)
+        cv.text(px - cv.text_width(ns, 1) // 2, py - 3, ns, 1, CREAM)
+    cv.text(mx + 6, my + mh - 11, "LEGEND: PIN NUMBER = CARD NUMBER ON THIS PAGE", 1, CREAM)
 
-    The quantised image is saved in palette (P) mode: a palette PNG is
-    ~3x smaller than the same pixels saved as RGB, which is what keeps
-    the entry inside the 190-450 KB target band.
-    """
-    small = img.resize((1024, 1024), Image.LANCZOS)
-    small = small.convert("P", palette=Image.ADAPTIVE, colors=256)
-    return small
+    # date check: two columns, one line per discarded item
+    dy = 898
+    cv.outline(m, dy, W - 2 * m, 62, RED, 2)
+    cv.text(m + 8, dy + 5, "DATE CHECK - NOT TODAY'S NEWS: THESE HAPPENED EARLIER; THEY ARE NOT TODAY'S STORIES.", 1, RED)
+    for col in range(2):
+        yy = dy + 17
+        for item in DATE_CHECK[col * 4:(col + 1) * 4]:
+            cv.text(m + 8 + col * 492, yy, item, 1, INK)
+            yy += 9
+    cv.text(m + 8, dy + 52, "TONIGHT'S REAL COUNT: 7 SEA DRONES, AT THE TOP OF THIS PAGE.", 1, DGREEN)
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--variant", default="A", choices=["A", "B"])
-    ap.add_argument("--out", default="entry.png")
-    args = ap.parse_args()
-    img = draw_page(args.variant)
-    small = _finalise(img)
-    small.save(args.out, optimize=True)
-    print(f"variant {args.variant} -> {args.out} "
-          f"{os.path.getsize(args.out)} bytes")
+    # footer
+    fy = 970
+    cv.rect(m, fy - 4, W - 2 * m, 1, INK)
+    cv.text(m, fy, "SOURCES: REUTERS - AP - BBC - CNN - TIMES - WSJ - GUARDIAN - COINPAPRIKA - TREASURY - KCNA - JAGRANJOSH - OBSERVERVOICE - HK NEWS TV - GADGETS360 - SALONVISION.", 1, GREY)
+    cv.text(m, fy + 14, "REPORTED = AS REPORTED BY THE NAMED SOURCE. PICTURES AND MAP: ORIGINAL DRAWINGS, DRAWN IN CODE.", 1, INK)
+    cv.text(m, fy + 28, "ORIGINAL DRAWINGS - THE EXCHANGE FLOOR - TUESDAY 24 NOVEMBER 2026 - PAGE ONE OF ONE.", 1, DGREEN)
+
+    grain_overlay(cv)
+    return save_png(cv, path)
+
 
 if __name__ == "__main__":
-    main()
-
-# ------------------------------------------------- margin-check aliases
-# Mirrors of the page data above in the old armada schema, so the local
-# margin checker (tools/margin_check.py) can read this entry. Same stories,
-# numbers and words as above — no separate content.
-# Masthead type: Playfair Display Black.
-grid = [
-    (1, "EUROPE", "WAR", "CNN / Times / WSJ / AP",
-     "Ukraine sinks Russian warship Merkury off Libya",
-     "7 sea drones launched at the corvette; a Ka-27 helicopter was destroyed aboard. MV Angara cargo vessel also hit; Zelenskyy calls the raid \u201cexemplary\u201d.",
-     "ship"),
-    (2, "EUROPE", "SEA", "Reuters / Times / WSJ",
-     "Russian cargo ship Sparta II hit, towed clear",
-     "121 m ship hit by 2 drones on Saturday; all 16 crew taken off safely. Towed out of Finnish waters on Sunday night; bound for Kaliningrad.",
-     "ship2"),
-    (3, "EUROPE", "WAR", "Times / AP",
-     "Russian strikes kill at least 15 near Kyiv",
-     "11 killed in a block of flats in Dymer; 5 injured in Kyiv on Monday. Drone hit a 6-floor building; Zelenskyy on Putin: \u201cfor us, he\u2019s a killer\u201d.",
-     "city"),
-    (4, "WORLD", "CLIMATE", "Times / Guardian",
-     "COP31 ends with no deal \u2014 first since 2000",
-     "Cover text dropped every fossil-fuel mention; EU, UK and others rejected it. 44 h overtime, longest COP ever; next round: Addis Ababa, Nov 2027.",
-     "summit"),
-    (5, "MIDDLE EAST", "SANCTIONS", "AP / Treasury",
-     "US sanctions ~30 Iran-linked exchange houses",
-     "Treasury names ~30 houses + executives at the core of shadow banking. Announced Monday as Rubio meets Qatar PM over Iran uncertainty.",
-     "bank"),
-    (6, "MIDDLE EAST", "CONFLICT", "AP",
-     "Israeli strikes kill 3 in Gaza",
-     "3 killed Monday in separate strikes, incl. a UNRWA employee. Shifa Hospital + agency confirm the deaths.",
-     "city2"),
-    (7, "MIDDLE EAST", "WAR", "AP",
-     "Strike kills 11 in western Yemen",
-     "Houthis say Saudi-backed forces\u2019 strike Monday killed 11, wounded 19. Casualties reported from the western front.",
-     "hills"),
-    (8, "AMERICAS", "MARKETS", "Reuters",
-     "Gold rebounds 1.5% to $3,588",
-     "Bullion +1.5% Monday after its worst week in 8 months. Traders await US PCE inflation report due 25 Nov; 10-yr yield ~4.96%.",
-     "gold"),
-    (9, "GLOBAL", "CRYPTO", "CoinPaprika",
-     "Bitcoin steadies near $61,284",
-     "$61,284 Monday 12:52 UTC, +1.1% in 24 h, \u22124.5% over 7 days. Weekend low ~$55,100 as leveraged liquidations eased.",
-     "coin"),
-    (10, "AMERICAS", "BUSINESS", "ActiveInvestorMag",
-     "GTA VI takes $3.8bn on day one",
-     "Biggest entertainment launch on record \u2014 past every game launch and single-day film box office. $3.8bn in one day: the largest first-day total ever reported.",
-     "gta"),
-    (11, "OCEANIA", "CRICKET", "HS / WicketPulse",
-     "New Zealand bat out draw with India",
-     "NZ 239/5 \u2014 Mitchell 49* off 186, Phillips 26* off 126; 63-run stand. India 720/9d (Rahul 136, Pant 128); 2nd Test: Christchurch, 27 Nov\u20131 Dec.",
-     "cricket"),
-    (12, "EUROPE", "FOOTBALL", "Mint / NextSportsWeb",
-     "Liverpool 4\u20130 Man Utd",
-     "Yoro sent off in the 8th minute; United down to 10 men. Defeat leaves United 19th in the league on 8 points.",
-     "football"),
-    (13, "AMERICAS", "POLITICS", "ActiveInvestorMag",
-     "Trump: work with Democrats to cap card rates",
-     "Trump says he would work with Democrats to cap credit-card rates. Also calls for scrapping the debt ceiling; Senate leadership vote 1 Dec.",
-     "capitol"),
-    (14, "AMERICAS", "POLITICS", "BBC / ActiveInvestorMag",
-     "Democrats take both chambers",
-     "House 258\u2013173, largest majority since 1992, after N. Carolina pickup. Senate leadership challenge: Van Hollen vs Schumer, secret ballot 1 Dec.",
-     "ballot"),
-    (20, "AMERICAS", "MARKETS", "Reuters",
-     "Nvidia brings back Jensen Huang as CEO",
-     "Board reinstates Huang effective immediately Mon 23 Nov; Trump intervened. Shares +31% Mon; Nasdaq +6%, S&P 500 +5%, chip index +12%.",
-     "chip"),
-]
-
-NUMS = [("7", "SEA DRONES"), ("$3.8BN", "GTA VI DAY ONE"),
-        ("$61,284", "BITCOIN"), ("$3,588", "GOLD +1.5%"),
-        ("+31%", "NVIDIA"), ("NO DEAL", "COP31"),
-        ("258\u2013173", "HOUSE")]
-
-TL = [("04:24 WIB TUE", "KCNA: North Korea weighs closing Swiss office in Pyongyang \u2014 Reuters"),
-      ("07:23 WIB TUE", "Gold edges up on bargain buying after sell-off \u2014 Reuters (00:23 GMT)"),
-      ("07:35 WIB TUE", "Japan factory PMI 53.7; output + export orders pick up \u2014 Reuters (00:35 UTC)"),
-      ("MON EVE UTC", "Nvidia board reinstates Huang as CEO; shares +31% \u2014 Reuters, reported Mon evening"),
-      ("MON EVE UTC", "Zelenskyy announces Merkury sinking; US sanctions ~30 Iran exchange houses \u2014 reported Mon evening")]
-
-BRIEFS_L = ["N. Korea weighs closing Swiss office, Pyongyang (KCNA, Tue)",
-            "US mulls military training for Syrian forces, first since 2024",
-            "Congo halts cobalt exports from 30 Nov (Reuters)",
-            "Indonesia factory blaze kills 24, dozens missing (Reuters)",
-            "CrowdStrike snaps up Zscaler in $44bn deal (Reuters)",
-            "Trump hosts meme-coin gala as token hits record lows (Reuters)",
-            "US Army to detonate lead stockpile in Iowa: 68 barrels (Reuters)",
-            "India considers rice export duties as prices rise (Reuters)",
-            "COP31 adopted 46 decisions despite no cover deal (Reuters)",
-            "Miley Cyrus weds Maxx Morando in California (Reuters)",
-            "Japan factory PMI 53.7 in Nov; output + orders up (Tue 00:35 UTC)"]
-
-BRIEFS_R = ["Singapore lifts 2026 forecast to ~6.0% after Q3 +6.1% (Reuters)",
-            "StarHub agrees $3.8bn all-share deal for M1 (Reuters, Tue)",
-            "Wellington draw sets up 2nd Test, Christchurch 27 Nov-1 Dec",
-            "Kraken CAD flash crash to ~$17,000 Sat; trades stand",
-            "UK\u2013EU Brexit reset: Burnham calls it \u201clandmark\u201d (BBC)",
-            "India\u2013EU trade pact likely signed 16 Dec, Brussels (JagranJosh)",
-            "Tata Steel sells pipe unit to APL Apollo, \u20b928,000 cr (ObserverVoice)",
-            "FBI probes hack of its crime database (AP)",
-            "Solana launches solana.ai for AI agents (Gadgets360)",
-            "UN AI weapons talks continue, states agree (salonvision)"]
-
-dc = ("186-drone night over Ukraine, 161 downed \u2014 Fri 21\u2013Sun 22 Nov \u00b7 "
-      "Hong Kong Election Committee: 856 candidates, 723 seats \u2014 Sun 22 Nov \u00b7 "
-      "Alcaraz beats Zverev, first ATP Finals title \u2014 Sun 22 Nov \u00b7 "
-      "Verstappen wins Las Vegas Grand Prix \u2014 Sun 22 Nov \u00b7 "
-      "Wembanyama scores 50, Spurs 114\u201391 Pelicans \u2014 Sun 22 Nov \u00b7 "
-      "India declare 720/9 \u2014 Sun 22 Nov (the DRAW is the news, Mon 23 Nov) \u00b7 "
-      "Huang resigns after affair admission \u2014 Thu 12 Nov (the REINSTATEMENT is the news, Mon 23 Nov)")
-
-PINS = [(20.1, 32.1), (25.0, 60.0), (30.5, 50.4), (30.7, 36.9),
-        (-79.5, 38.0), (34.5, 31.5), (44.0, 15.5), (-0.1, 51.5),
-        (-74.0, 40.7), (-118.2, 34.0), (174.8, -41.3), (-2.99, 53.4),
-        (-74.0, 40.6), (-80.0, 36.0), (-122.0, 37.35)]
+    import os
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "entry.png")
+    n = build(out)
+    print("entry.png bytes:", n)
